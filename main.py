@@ -1289,7 +1289,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if sender_id != ADMIN_ID and sender_key != photo_key:
             await ctx.bot.send_message(chat_id, "❌ Можна переміщати тільки своє фото.")
             return
-        today_str = date.today().isoformat()
+        today_str = today_kyiv().isoformat()
         if await db.get_photo_count_today("group", today_str) >= 1:
             await ctx.bot.send_message(chat_id, "❌ Ліміт: 1 фото в спільні на день вже вичерпано.")
             return
@@ -1613,26 +1613,31 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context  # required by PTB handler signature
     if not await is_allowed(update):
         return
+
     sender_id = update.effective_user.id
     eff_id    = effective_user_id(sender_id)
 
-    # Знаходимо user_key відправника (з урахуванням прокси)
+    # Шукаємо user_key по tg_id (зареєстровані) або по username (Вова/Позікс)
     user_key = cfg_key_by_tg_id(eff_id)
+    if not user_key:
+        uname = update.effective_user.username or ""
+        for key, cfg in USERS_CONFIG.items():
+            if cfg.get("username") and cfg["username"].lower() == uname.lower():
+                user_key = key
+                break
     if not user_key:
         return
 
-    today_str = date.today().isoformat()
+    today_str = today_kyiv().isoformat()
 
-    # Перевірка ліміту: 1 фото на день у особисту галерею
+    # Перевірка ліміту: 1 фото на день
     count_today = await db.get_photo_count_today(user_key, today_str)
     if count_today >= 1:
-        cfg = USERS_CONFIG.get(user_key, {})
-        name = cfg.get("name", user_key)
+        user_name = USERS_CONFIG.get(user_key, {}).get("name", user_key)
         note = await update.message.reply_text(
-            f"❌ {name}, ліміт: 1 фото на день у особисту галерею вже досягнуто."
+            f"❌ {user_name}, ліміт: 1 фото на день вже вичерпано."
         )
-        # Видаляємо нотатку через 5 секунд щоб не смітити
-        await asyncio.sleep(5)
+        await asyncio.sleep(4)
         try:
             await note.delete()
             await update.message.delete()
@@ -1643,6 +1648,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
     caption = update.message.caption or ""
     await db.save_photo(user_key, photo.file_id, today_str, caption)
+
+    # Коротке підтвердження що фото збережено
+    note = await update.message.reply_text("📸 Збережено в галерею!")
+    await asyncio.sleep(3)
+    try:
+        await note.delete()
+    except Exception:
+        pass
     # Тихо зберігаємо — фото залишається в чаті
 
 
