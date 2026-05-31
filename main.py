@@ -115,6 +115,7 @@ EXERCISES_BY_DAY: dict = {
 active_sessions: dict = {}   # eff_tg_id → WorkoutSession
 proxy_mode: dict = {}        # ADMIN_ID → {"target_tg_id", "target_name", "last_activity"}
 awaiting_weight: dict = {}   # eff_tg_id → menu_message_id  (очікуємо введення ваги)
+menu_owners: dict = {}       # message_id → sender_id (хто відкрив це меню)
 
 
 class ExerciseState:
@@ -945,7 +946,8 @@ async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def _send_menu(sender_id: int, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE):
     eff_id = effective_user_id(sender_id)
     txt = await text_main_menu(sender_id, eff_id)
-    await ctx.bot.send_message(chat_id, txt, reply_markup=build_main_menu_kb(sender_id))
+    msg = await ctx.bot.send_message(chat_id, txt, reply_markup=build_main_menu_kb(sender_id))
+    menu_owners[msg.message_id] = sender_id
 
 
 # /adduser — тільки текстом, бо потребує аргументів
@@ -990,11 +992,26 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat_id
     msg_id = query.message.message_id
 
+    # ── Захист від натискання чужих меню ──────────────────────────────────────
+    # Для меню-кнопок перевіряємо власника; для тренувань — пізніше окрема перевірка
+    is_menu_btn = (data.startswith("menu_") or data.startswith("res_") or
+                   data.startswith("vs_") or data.startswith("skip_") or
+                   data.startswith("gal") or data.startswith("force_") or
+                   data.startswith("plan_") or data.startswith("proxy_") or
+                   data == "noop")
+    if is_menu_btn:
+        owner = menu_owners.get(msg_id)
+        if owner and owner != sender_id:
+            # Чуже меню — відкриваємо нове для цього юзера
+            await _send_menu(sender_id, chat_id, ctx)
+            return
+
     # ── Головне меню ──────────────────────────────────────────────────────────
     if data == "menu_main":
         txt = await text_main_menu(sender_id, eff_id)
         try:
             await query.edit_message_text(txt, reply_markup=build_main_menu_kb(sender_id))
+            menu_owners[msg_id] = sender_id  # оновлюємо власника при поверненні назад
         except Exception:
             pass
         return
