@@ -950,6 +950,34 @@ async def _send_menu(sender_id: int, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
 
 
 # /adduser — тільки текстом, бо потребує аргументів
+async def cmd_clearme(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/clearme — видаляє всі тренування і ваги для себе (тільки адмін)"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    args = ctx.args
+    key = args[0].lower() if args else "lug"
+    if key not in USERS_CONFIG:
+        await update.message.reply_text("❌ Ключ: lug / vova / pozix")
+        return
+    tg_id = USERS_CONFIG[key]["tg_id"]
+    if not tg_id:
+        await update.message.reply_text("❌ Не зареєстрований")
+        return
+    db_user = await db.get_user_by_tg_id(tg_id)
+    if not db_user:
+        await update.message.reply_text("❌ Немає даних")
+        return
+    uid = db_user["id"]
+    async with __import__("aiosqlite").connect(db.DB_PATH) as conn:
+        await conn.execute("DELETE FROM sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id=?)", (uid,))
+        await conn.execute("DELETE FROM workouts WHERE user_id=?", (uid,))
+        await conn.execute("DELETE FROM body_weight WHERE user_id=?", (uid,))
+        await conn.execute("DELETE FROM skips WHERE user_id=?", (uid,))
+        await conn.commit()
+    name = USERS_CONFIG[key]["name"]
+    await update.message.reply_text(f"🗑 {name} — всі тренування і ваги видалено")
+
+
 async def cmd_reset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/reset — скидає cycle_day=1 для себе або /reset vova/pozix"""
     if update.effective_user.id != ADMIN_ID:
@@ -1700,6 +1728,7 @@ def main():
     app.add_handler(CommandHandler("menu",    cmd_menu))
     app.add_handler(CommandHandler("adduser", cmd_adduser))
     app.add_handler(CommandHandler("reset",   cmd_reset))
+    app.add_handler(CommandHandler("clearme", cmd_clearme))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
