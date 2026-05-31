@@ -1202,7 +1202,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         photo_id = int(data.removeprefix("gal_tog_"))
         sender_key = cfg_key_by_tg_id(sender_id)
         photo_key = None
-        async with __import__("aiosqlite").connect("gym.db") as _c:
+        async with __import__("aiosqlite").connect(db.DB_PATH) as _c:
             _c.row_factory = __import__("aiosqlite").Row
             async with _c.execute("SELECT user_key FROM photos WHERE id = ?", (photo_id,)) as _cur:
                 _row = await _cur.fetchone()
@@ -1228,7 +1228,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if sender_id != ADMIN_ID and sender_key != del_key:
                 await ctx.bot.send_message(chat_id, "❌ Можна видаляти тільки своє фото.")
                 return
-            async with __import__("aiosqlite").connect("gym.db") as conn:
+            async with __import__("aiosqlite").connect(db.DB_PATH) as conn:
                 await conn.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
                 await conn.commit()
         try:

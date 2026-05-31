@@ -3,10 +3,12 @@
 Все функции асинхронные.
 """
 
+import os
 import aiosqlite
 from datetime import date, timedelta
 
-DB_PATH = "gym.db"
+# На Railway: DB_PATH=/data/gym.db через Variables + Volume на /data
+DB_PATH = os.environ.get("DB_PATH", "gym.db")
 
 
 async def init_db():
