@@ -254,6 +254,20 @@ async def is_allowed(update: Update) -> bool:
     return update.effective_chat.id == ALLOWED_CHAT_ID
 
 
+async def auto_register_by_username(user) -> None:
+    """Якщо юзер знайдений по username але tg_id ще None — зберігаємо."""
+    if not user or not user.username:
+        return
+    for cfg in USERS_CONFIG.values():
+        if (cfg.get("username") and
+                cfg["username"].lower() == user.username.lower() and
+                cfg["tg_id"] is None):
+            cfg["tg_id"] = user.id
+            await db.create_user(user.id, user.username, cfg["name"])
+            log.info("Auto-registered %s tg_id=%s", cfg["name"], user.id)
+            break
+
+
 async def ensure_db_user(tg_id: int) -> Optional[dict]:
     cfg = cfg_by_tg_id(tg_id)
     if not cfg:
@@ -1029,6 +1043,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_known_user(query.from_user):
         await query.answer()
         return
+    await auto_register_by_username(query.from_user)
     await query.answer()
 
     sender_id = query.from_user.id
@@ -1483,6 +1498,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await is_allowed(update):
         return
+    await auto_register_by_username(update.effective_user)
 
     sender_id = update.effective_user.id
     eff_id = effective_user_id(sender_id)
