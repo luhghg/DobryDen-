@@ -1443,8 +1443,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     eff_id = effective_user_id(sender_id)
     text = update.message.text.strip()
 
-    # ── "Добрий Ден" → головне меню ──────────────────────────────────────────
-    if text.lower() == "добрий ден":
+    # ── "Добрий Ден" → головне меню (м'яка перевірка — ігноруємо пунктуацію)
+    if "добрий ден" in text.lower():
         await _send_menu(sender_id, update.effective_chat.id, ctx)
         return
 
