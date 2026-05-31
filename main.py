@@ -49,6 +49,14 @@ ALLOWED_CHAT_ID: Optional[int] = None
 # Відлік циклу: 1 червня 2026 (пн) = День 1
 PLAN_START = date(2026, 6, 1)
 
+# Тренування тільки починаючи з цієї дати
+LAUNCH_DATE = date(2026, 6, 1)
+LAUNCH_BLOCK_MSG = (
+    "🎉 Добрий Ден!\n\n"
+    "Сьогодні в Артьома ДР — тренування не буде 🥳\n"
+    "Стартуємо з 1 червня 💪"
+)
+
 # =============================================================================
 # Дані вправ
 # =============================================================================
@@ -751,6 +759,9 @@ async def start_workout_for_user(
     chat_id: int,
     is_max: bool,
 ) -> tuple[bool, str]:
+    if date.today() < LAUNCH_DATE:
+        return False, LAUNCH_BLOCK_MSG
+
     db_user = await ensure_db_user(eff_id)
     if not db_user:
         return False, "❌ Ви не зареєстровані в системі."
@@ -957,7 +968,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         is_max = data == "menu_max"
         ok, err = await start_workout_for_user(ctx.bot, eff_id, sender_id, chat_id, is_max)
         if not ok:
-            await query.answer(err, show_alert=True)
+            try:
+                await query.edit_message_text(err, reply_markup=back_kb())
+            except Exception:
+                pass
         return
 
     # ── Пропустити ────────────────────────────────────────────────────────────
