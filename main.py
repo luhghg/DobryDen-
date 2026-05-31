@@ -924,12 +924,9 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if chat.type in ("group", "supergroup") and user.id == ADMIN_ID:
-        if ALLOWED_CHAT_ID is None:
-            ALLOWED_CHAT_ID = chat.id
-            await db.set_config("allowed_chat_id", str(chat.id))
-            await update.message.reply_text(f"✅ Чат зареєстровано! ID: {chat.id}")
-        else:
-            await update.message.reply_text(f"Чат вже зареєстровано (ID: {ALLOWED_CHAT_ID})")
+        ALLOWED_CHAT_ID = chat.id
+        await db.set_config("allowed_chat_id", str(chat.id))
+        await update.message.reply_text(f"✅ Чат зареєстровано! ID: {chat.id}")
         return
 
     if not await is_allowed(update):
