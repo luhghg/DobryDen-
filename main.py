@@ -680,7 +680,9 @@ async def text_me(eff_id: int) -> str:
     if not db_user:
         return "❌ Ще не починав тренуватися."
 
-    day = db_user["cycle_day"]
+    # День завжди по київському календарю, не з БД
+    today = today_kyiv()
+    day = plan_cycle_day(today) if today >= LAUNCH_DATE else 1
     last_wo = await db.get_last_workout(db_user["id"])
     streak = await db.get_streak(db_user["id"])
     skips_m = await db.get_skips_this_month(db_user["id"])
@@ -688,7 +690,7 @@ async def text_me(eff_id: int) -> str:
 
     last_str = "—"
     if last_wo:
-        diff = (date.today() - date.fromisoformat(last_wo["date"])).days
+        diff = (today - date.fromisoformat(last_wo["date"])).days
         last_str = "сьогодні" if diff == 0 else ("вчора" if diff == 1 else f"{diff}д тому")
 
     w_str, w_change = "—", ""
@@ -948,6 +950,24 @@ async def _send_menu(sender_id: int, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
 
 
 # /adduser — тільки текстом, бо потребує аргументів
+async def cmd_reset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/reset — скидає cycle_day=1 для себе або /reset vova/pozix"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    args = ctx.args
+    key = args[0].lower() if args else "lug"
+    if key not in USERS_CONFIG:
+        await update.message.reply_text("❌ Невідомий ключ: lug / vova / pozix")
+        return
+    tg_id = USERS_CONFIG[key]["tg_id"]
+    if not tg_id:
+        await update.message.reply_text(f"❌ {USERS_CONFIG[key]['name']} не зареєстрований")
+        return
+    await db.update_user_by_tg_id(tg_id, cycle_day=1)
+    name = USERS_CONFIG[key]["name"]
+    await update.message.reply_text(f"✅ {name} — cycle_day скинуто на 1")
+
+
 async def cmd_adduser(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1679,6 +1699,7 @@ def main():
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("menu",    cmd_menu))
     app.add_handler(CommandHandler("adduser", cmd_adduser))
+    app.add_handler(CommandHandler("reset",   cmd_reset))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
