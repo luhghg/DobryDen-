@@ -177,6 +177,13 @@ class WorkoutSession:
 # Допоміжні функції
 # =============================================================================
 
+KY_TZ = pytz.timezone("Europe/Kyiv")
+
+def today_kyiv() -> date:
+    """Поточна дата за київським часом."""
+    return datetime.now(tz=KY_TZ).date()
+
+
 def fmt_date_ua(d: date) -> str:
     return f"{d.day} {UA_MONTHS[d.month]}"
 
@@ -544,6 +551,9 @@ def build_main_menu_kb(sender_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📊 Результати",   callback_data="menu_results"),
             InlineKeyboardButton("📸 Галерея",       callback_data="menu_gallery"),
         ],
+        [
+            InlineKeyboardButton("🔀 Форс-мажор",   callback_data="menu_force"),
+        ],
     ]
     if sender_id == ADMIN_ID:
         rows.append([InlineKeyboardButton("👤 Прокси-режим", callback_data="menu_admin")])
@@ -629,6 +639,18 @@ def build_confirm_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton("Ні ❌",  callback_data="confirm_no"),
     ]])
 
+
+def build_force_kb() -> InlineKeyboardMarkup:
+    """Вибір дня для форс-мажорного тренування."""
+    rows = []
+    for day in [1, 2, 3]:
+        rows.append([InlineKeyboardButton(
+            f"💪 День {day} — {DAY_NAMES[day]}",
+            callback_data=f"force_day_{day}",
+        )])
+    rows.append([InlineKeyboardButton("← Меню", callback_data="menu_main")])
+    return InlineKeyboardMarkup(rows)
+
 # =============================================================================
 # Побудова текстів (для кнопок статистики)
 # =============================================================================
@@ -636,11 +658,13 @@ def build_confirm_kb() -> InlineKeyboardMarkup:
 async def text_main_menu(sender_id: int, eff_id: int) -> str:
     cfg = cfg_by_tg_id(eff_id)
     name = cfg["name"] if cfg else "???"
-    db_user = await db.get_user_by_tg_id(eff_id) if cfg else None
+    today = today_kyiv()
     cycle_line = ""
-    if db_user:
-        d = db_user["cycle_day"]
-        cycle_line = f"\n{name} | День {d} — {DAY_NAMES[d]}"
+    if today >= LAUNCH_DATE:
+        d = plan_cycle_day(today)
+        cycle_line = f"\n{name} | {fmt_date_ua(today)} — День {d} ({DAY_NAMES[d]})"
+    else:
+        cycle_line = f"\n🚀 Старт 1 червня!"
     proxy_line = ""
     if sender_id == ADMIN_ID and ADMIN_ID in proxy_mode:
         proxy_line = f"\n📝 Режим прокси: за {proxy_mode[ADMIN_ID]['target_name']}"
@@ -699,23 +723,30 @@ async def text_me(eff_id: int) -> str:
 
 
 async def text_status() -> str:
+    today = today_kyiv()
+    planned_day = plan_cycle_day(today) if today >= LAUNCH_DATE else None
     lines = ["🏋️ Статус групи", "━" * 32]
+    if planned_day:
+        lines.append(f"📅 Сьогодні план: День {planned_day} — {DAY_NAMES[planned_day]}")
+        lines.append("")
     for cfg in USERS_CONFIG.values():
         if not cfg["tg_id"]:
             lines.append(f"{cfg['name']}: не зареєстрований")
             continue
         db_user = await db.get_user_by_tg_id(cfg["tg_id"])
         if not db_user:
-            lines.append(f"{cfg['name']}: не починав")
+            lines.append(f"{cfg['name']}: ще не починав")
             continue
-        d = db_user["cycle_day"]
         last = await db.get_last_workout(db_user["id"])
         streak = await db.get_streak(db_user["id"])
+        # Перевіряємо чи тренувався сьогодні
+        trained_today = last and last["date"] == today.isoformat()
+        status_icon = "✅" if trained_today else ("😴" if planned_day == 4 else "⬜")
         last_str = "—"
         if last:
-            diff = (date.today() - date.fromisoformat(last["date"])).days
+            diff = (today - date.fromisoformat(last["date"])).days
             last_str = "сьогодні" if diff == 0 else ("вчора" if diff == 1 else f"{diff}д тому")
-        lines.append(f"{cfg['name']}: День {d} | {last_str} | 🔥{streak}")
+        lines.append(f"{status_icon} {cfg['name']}: {last_str} | 🔥{streak}")
     return "\n".join(lines)
 
 
@@ -758,20 +789,25 @@ async def start_workout_for_user(
     sender_id: int,
     chat_id: int,
     is_max: bool,
+    override_day: int = None,   # форс-мажор: вибраний день 1-3
 ) -> tuple[bool, str]:
-    if date.today() < LAUNCH_DATE:
+    today = today_kyiv()
+
+    if today < LAUNCH_DATE:
         return False, LAUNCH_BLOCK_MSG
 
     db_user = await ensure_db_user(eff_id)
     if not db_user:
         return False, "❌ Ви не зареєстровані в системі."
 
-    cycle_day = db_user["cycle_day"]
     cfg = cfg_by_tg_id(eff_id)
     user_name = cfg["name"] if cfg else "???"
 
-    if cycle_day == 4:
-        return False, f"😴 {user_name} — день відпочинку, цикл завтра продовжується"
+    # День визначається по київській даті, якщо немає форс-мажору
+    cycle_day = override_day if override_day else plan_cycle_day(today)
+
+    if cycle_day == 4 and not override_day:
+        return False, f"😴 {user_name} — сьогодні день відпочинку 😴\nЗавтра продовжуємо!"
 
     if eff_id in active_sessions and not active_sessions[eff_id].finished:
         return False, "❗ Тренування вже активне! Натисни 🏁 Готово щоб завершити."
@@ -780,30 +816,30 @@ async def start_workout_for_user(
     if sender_id == ADMIN_ID and eff_id != ADMIN_ID and ADMIN_ID in proxy_mode:
         proxy_for = proxy_mode[ADMIN_ID]["target_name"]
 
+    force_note = f"⚡ Форс-мажор: обрано День {cycle_day}\n" if override_day else ""
+
     exercises = [ExerciseState(e) for e in EXERCISES_BY_DAY[cycle_day]]
 
-    # Завантажуємо підходи з попереднього тренування цього типу
+    # Підходи з попереднього тренування цього типу
     prev_data = await db.get_last_workout_sets(db_user["id"], cycle_day)
     for ex in exercises:
-        # Шукаємо за основною назвою або будь-якою альтернативою
-        candidates = [ex.original_name] + ex.alts
-        for candidate in candidates:
+        for candidate in [ex.original_name] + ex.alts:
             if candidate in prev_data and prev_data[candidate]:
-                sets = prev_data[candidate]
-                sets_str = " / ".join(
-                    f"{int(w) if w == int(w) else w}x{r}" for w, r in sets
+                ex.prev_str = " / ".join(
+                    f"{int(w) if w == int(w) else w}x{r}"
+                    for w, r in prev_data[candidate]
                 )
-                ex.prev_str = sets_str
                 break
 
-    workout_id = await db.create_workout(db_user["id"], date.today().isoformat(), cycle_day,
-                                         "max" if is_max else "normal")
+    workout_id = await db.create_workout(
+        db_user["id"], today.isoformat(), cycle_day, "max" if is_max else "normal"
+    )
     session = WorkoutSession(eff_id, user_name, cycle_day, chat_id, 0, is_max)
     session.exercises = exercises
     session.workout_id = workout_id
 
-    msg = await bot.send_message(chat_id, build_workout_text(session, proxy_for),
-                                 reply_markup=build_workout_kb(session))
+    text = (force_note or "") + build_workout_text(session, proxy_for)
+    msg = await bot.send_message(chat_id, text, reply_markup=build_workout_kb(session))
     session.message_id = msg.message_id
     active_sessions[eff_id] = session
 
@@ -1063,6 +1099,34 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── План (календар червня) ────────────────────────────────────────────────
+    # ── Форс-мажор ───────────────────────────────────────────────────────────
+    if data == "menu_force":
+        today = today_kyiv()
+        planned_day = plan_cycle_day(today)
+        planned_name = DAY_NAMES[planned_day]
+        try:
+            await query.edit_message_text(
+                f"🔀 Форс-мажор\n\n"
+                f"По плану сьогодні: День {planned_day} — {planned_name}\n\n"
+                f"Обери що будеш робити насправді:",
+                reply_markup=build_force_kb(),
+            )
+        except Exception:
+            pass
+        return
+
+    if data.startswith("force_day_"):
+        override = int(data.removeprefix("force_day_"))
+        ok, err = await start_workout_for_user(
+            ctx.bot, eff_id, sender_id, chat_id, False, override_day=override
+        )
+        if not ok:
+            try:
+                await query.edit_message_text(err, reply_markup=back_kb())
+            except Exception:
+                pass
+        return
+
     if data == "menu_plan":
         try:
             await query.edit_message_text(
