@@ -10,7 +10,10 @@
       "PowerShell(Stop-Process -Id 23536 -Force -ErrorAction SilentlyContinue)",
       "PowerShell(Stop-Process -Id 23836 -Force -ErrorAction SilentlyContinue)",
       "PowerShell(Get-Process python -ErrorAction SilentlyContinue)",
-      "PowerShell(Stop-Process -Force)"
+      "PowerShell(Stop-Process -Force)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Admin\\Desktop\\luzalchik\\venv"
