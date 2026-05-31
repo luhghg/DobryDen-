@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python -m venv venv)",
+      "Bash(python -c \"import ast, sys; ast.parse\\(open\\('db.py'\\).read\\(\\)\\); print\\('db.py OK'\\); ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('main.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('main.py OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell(Get-Process python -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowTitle -eq \"\" } | Select-Object Id, CPU, StartTime)",
+      "PowerShell(Stop-Process -Id 23536 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 23836 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process python -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Admin\\Desktop\\luzalchik\\venv"
+    ]
+  }
+}
